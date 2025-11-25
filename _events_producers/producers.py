@@ -50,7 +50,7 @@ for _ in range(1000):
         "name": fake.catch_phrase(),
         "category": random.choice(["Electronics", "Home", "Clothing", "Books", "Beauty"]),
         "description": fake.sentence(),
-        "price": round(random.uniform(5, 300), 2)
+        "unit_price": round(random.uniform(5, 300), 2)
     })
 
 def build_event(name, now):
@@ -68,7 +68,7 @@ def build_event(name, now):
             item = product.copy()
             item["quantity"] = qty
             items.append(item)
-            total_amount += product["price"] * qty
+            total_amount += product["unit_price"] * qty
         
         # Pick a random customer from the pool
         customer = random.choice(CUSTOMERS_POOL)
