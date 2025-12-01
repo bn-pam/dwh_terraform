@@ -1,12 +1,7 @@
-DROP TABLE IF EXISTS fact_order;
-DROP TABLE IF EXISTS fact_clickstream;
-
-DROP TABLE IF EXISTS dim_product;
-DROP TABLE IF EXISTS dim_customer;
-DROP TABLE IF EXISTS dim_seller;
-
+-- Create Tables for ShopNow DWH
 
 -- 1. dim_customer
+DROP TABLE IF EXISTS dim_customer;
 CREATE TABLE dim_customer (
     customer_id VARCHAR(50) PRIMARY KEY,
     name        NVARCHAR(255),
@@ -17,39 +12,27 @@ CREATE TABLE dim_customer (
 );
 
 -- 2. dim_product
+DROP TABLE IF EXISTS dim_product;
 CREATE TABLE dim_product (
     product_id VARCHAR(50) PRIMARY KEY,
     name       NVARCHAR(255),
     category   NVARCHAR(100)
 );
 
-
--- 3. dim_seller (SCD Type 2) - Le Parent
-CREATE TABLE dim_seller (
-    seller_key      INT IDENTITY(1,1) PRIMARY KEY, -- Clé technique auto-incrémentée
-    seller_id       VARCHAR(50),                   -- Clé métier
-    name            NVARCHAR(255),
-    tier            NVARCHAR(50),
-    commission_rate DECIMAL(5, 2),
-    row_start_date  DATETIME,
-    row_end_date    DATETIME,
-    is_current      BIT
-);
-
--- 4. fact_order (L'Enfant)
+-- 3. fact_order
+DROP TABLE IF EXISTS fact_order;
 CREATE TABLE fact_order (
     order_id        VARCHAR(50),
     product_id      VARCHAR(50),
     customer_id     VARCHAR(50),
-    seller_key      INT,
     quantity        INT,
     unit_price      DECIMAL(18, 2),
     status          NVARCHAR(50),
-    order_timestamp DATETIME,
-    CONSTRAINT fk_order_seller FOREIGN KEY (seller_key) REFERENCES dim_seller(seller_key)
+    order_timestamp DATETIME
 );
 
--- 5. fact_clickstream
+-- 4. fact_clickstream
+DROP TABLE IF EXISTS fact_clickstream;
 CREATE TABLE fact_clickstream (
     event_id        VARCHAR(50) PRIMARY KEY,
     session_id      VARCHAR(50),
