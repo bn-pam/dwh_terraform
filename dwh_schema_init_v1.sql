@@ -1,4 +1,4 @@
--- Create Tables for ShopNow DWH
+-- Create Tables for ShopNow DWH - initial Version
 
 -- 1. dim_customer
 DROP TABLE IF EXISTS dim_customer;

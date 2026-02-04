@@ -63,6 +63,8 @@ resource "azurerm_storage_account" "datalake" {
   is_hns_enabled           = true # Important pour Data Lake Gen2 (Hierarchical Namespace)
 }
 
+#################################################
+# ajout de code pour les tenants
 // Création du Tenant Vendeur 1 (TechWorld)
 resource "azurerm_storage_container" "tenant_techworld" {
   name                  = "raw-data-techworld" # Le dossier racine du vendeur
@@ -82,4 +84,105 @@ resource "azurerm_storage_container" "tenant_shopnow_admin" {
   name                  = "shopnow-core-data"
   storage_account_name  = azurerm_storage_account.datalake.name
   container_access_type = "private"
+}
+#################################################
+
+# ajout de code pour la procédure de purge RGPD
+
+# ordonnanceur de la purge RGPD quotidienne via Logic App
+# Création de la Logic App
+resource "azurerm_logic_app_workflow" "maintenance_rgpd" {
+  name                = "la-shopnow-compliance-pbo"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    Category = "Compliance_RGPD"
+    Task     = "Quarantine_Daily"
+  }
+}
+
+# Déclencheur/trigger : 1ère seconde de chaque mois à 02h00 il déclenche la Logic App
+resource "azurerm_logic_app_trigger_recurrence" "daily_trigger_rgpd" {
+  logic_app_id = azurerm_logic_app_workflow.maintenance_rgpd.id
+  name         = "recurrence-daily-purge"
+  frequency    = "Day"
+  interval     = 1
+
+  schedule {
+    at_these_hours   = [17]
+    at_these_minutes = [0]
+  }
+}
+
+# Action : Appel à la Procédure Stockée SQL (sp_PurgeRGPD_Mensuelle)
+#"type": "ApiConnection", indique qu'on utilise une connexion API existante, sinon erreur 400
+resource "azurerm_logic_app_action_custom" "call_sql_purge" {
+  logic_app_id = azurerm_logic_app_workflow.maintenance_quarantine.id
+  name         = "Execute_sp_PurgeRGPD_Daily"
+  body = <<BODY
+{
+    "type": "ApiConnection",
+    "inputs": {
+        "host": {
+            "connection": {
+                "name": "sql-connection-shopnow"
+            }
+        },
+        "method": "post",
+        "path": "/datasets/default/procedures/sp_PurgeRGPD_Daily"
+    }
+}
+BODY
+}
+
+#################################################
+
+# ajout de code pour la procédure de quarantaine
+
+# ordonnanceur de la mise en quarantaine via Logic App
+# Création de la Logic App
+resource "azurerm_logic_app_workflow" "maintenance_quarantine" {
+  name                = "la-shopnow-quarantine-pbo"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    Category = "Quarantine"
+    Task     = "Quarantine_Daily"
+  }
+}
+
+# Déclencheur/trigger : 1ère seconde de chaque mois à 02h00 il déclenche la Logic App
+resource "azurerm_logic_app_trigger_recurrence" "daily_trigger_quarantine" {
+  logic_app_id = azurerm_logic_app_workflow.maintenance_quarantine.id
+  name         = "recurrence-daily-quarantine"
+  frequency    = "Day"
+  interval     = 1
+
+  schedule {
+    at_these_hours   = [16]
+    at_these_minutes = [0]
+  }
+}
+
+# Action : Appel à la Procédure Stockée SQL (sp_clean_data_quarantine)
+#"type": "ApiConnection", indique qu'on utilise une connexion API existante, sinon erreur 400
+resource "azurerm_logic_app_action_custom" "call_sql_purge_quarantine" {
+  logic_app_id = azurerm_logic_app_workflow.maintenance_quarantine.id
+  name         = "sp_clean_data_quarantine"
+  body = <<BODY
+{
+    "type": "ApiConnection",
+    "inputs": {
+        "host": {
+            "connection": {
+                "name": "sql-connection-shopnow"
+            }
+        },
+        "method": "post",
+        "path": "/datasets/default/procedures/sp_clean_data_quarantine"
+    }
+}
+BODY
 }

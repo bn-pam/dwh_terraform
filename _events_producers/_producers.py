@@ -30,12 +30,6 @@ producers = {
 
 timers = {name: 0 for name in EVENT_HUBS}
 
-############ Création d'un pool de vendeurs (Sellers), après modification du script TF et du schéma de BDD pour intégrer le vendeur
-SELLERS_POOL = [
-        {"seller_id": "SELL-001", "name": "TechWorld", "tier": "Gold"},
-        {"seller_id": "SELL-002", "name": "Librairie Centrale", "tier": "Bronze"},
-        {"seller_id": "SELL-003", "name": "Electro-Depot", "tier": "Silver"}
-    ]
 # Global pool of customers
 CUSTOMERS_POOL = []
 for _ in range(100):
@@ -67,8 +61,6 @@ def build_event(name, now):
         num_items = random.randint(1, 5)
         # Select unique products to avoid duplicates in the same order
         selected_products = random.sample(PRODUCTS_POOL, num_items)
-        #########Sélectionner un vendeur aléatoire pour chaque commande (après modification de script TF et du schéma de BDD pour intégrer le vendeur)
-        selected_seller = random.choice(SELLERS_POOL)
         
         for product in selected_products:
             qty = random.randint(1, 3)
@@ -89,8 +81,7 @@ def build_event(name, now):
             "total_amount": round(total_amount, 2),
             "currency": "USD",
             "status": "PLACED",
-            "timestamp": now,
-            "seller": selected_seller,  ######### <--- vendeur après modification du script TF et du schéma de BDD
+            "timestamp": now
         }
 
     if name == "clickstream":

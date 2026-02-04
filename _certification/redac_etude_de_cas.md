@@ -93,10 +93,6 @@ graph TD
     style Src_EH fill:#f9f,stroke:#333,stroke-width:1px,color:#000,stroke-dasharray: 5 5
 ```
 
-
-
-
-
 ### proposition :
 - créer une dimension vendeur (une table dédiée, dim_seller)
 - lui associer un SCD de type 2 (pour suivre les états de chaque vendeur dans le temps)
@@ -121,6 +117,8 @@ erDiagram
     dim_customer |o--o{ fact_clickstream : "1 client génère N events (via user_id)"
     dim_seller ||--o{ fact_order : "1 vendeur est lié à N lignes de commandes"
 
+    %% Relation de Maintenance
+    fact_order ||--o| table_quarantaine : "Extraction vers"
 
     %% Table: dim_customer
     dim_customer {
@@ -163,12 +161,31 @@ erDiagram
     
      %% Table: dim_seller, 1 ligne par version du vendeur (SCD type 2)
     dim_seller {
-        VARCHAR(50) seller_id PK
+        INT seller_key PK
+        VARCHAR(50) seller_id
         NVARCHAR(255) name
         NVARCHAR(255) status
         NVARCHAR(100) seller_category
         DATETIME date_start
         DATETIME date_end
+    }
+    
+    %% La table de mise en quarantaine des données non conformes
+    table_quarantaine {
+        INT quarantine_id PK
+        VARCHAR(50) order_id
+        NVARCHAR(255) error_reason
+        DATETIME detected_at
+        NVARCHAR(100) raw_data_dump
+    }
+    
+    %% Table pour le logging des exécutions de procédures stockées
+    sys_log_execution {
+        INT log_id PK
+        NVARCHAR(100) proc_name
+        INT rows_affected
+        NVARCHAR(20) status
+        DATETIME execution_date
     }
 ```
 
@@ -613,3 +630,438 @@ ce modèle permet une souplesse d’analyse et une traçabilité des transaction
 - il permet d’isoler les données par vendeur pour des analyses ciblées (par produit etc.)
 - 
 - il facilite la gestion des évolutions des vendeurs dans le temps (pour Shopnow)
+
+
+
+
+
+C'est très clair. En effet, la partie précédente couvrait l'**Architecture** et la **Modélisation** (le "Design"). Les points que tu listes maintenant concernent le **MCO (Maintien en Conditions Opérationnelles)**, l'**Exploitation** et les **Procédures Techniques**.
+
+Voici le complément indispensable pour ton dossier. Tu peux l'intégrer comme une grande partie "Exploitation et Maintenance" ou "Manuel des Opérations".
+
+---
+
+# Dossier d'Exploitation et de Maintenance (MCO)
+
+## 1. Organisation de la Maintenance et Support (ITIL)
+
+### 1.1. Méthodologie et Outillage
+
+Nous mettons en place un **Centre de Services** aligné sur les bonnes pratiques ITIL pour gérer les incidents et les demandes de travaux.
+
+* **Outil de Ticketing :** **Jira Service Management** (ou Azure DevOps Boards).
+* Il centralise les tickets entrants (bugs, demandes d'accès, évolutions).
+* Il est lié au repository de code (Git) pour la traçabilité des modifications.
+
+
+* **Niveaux de Support :**
+* **Niveau 1 (Service Desk) :** Qualification de la demande (ex: "Je n'accède pas au rapport"). Résolution simple (reset mot de passe).
+* **Niveau 2 (Data Ops) :** Relance de pipelines échoués, analyse de logs d'erreur, gestion des accès complexes.
+* **Niveau 3 (Data Engineers) :** Correction de bugs de code, modification des modèles de données (SCD), évolution d'architecture.
+
+
+
+### 1.2. Priorisation et SLAs (Service Level Agreements)
+
+La priorisation est définie par une matrice **Urgence x Impact**.
+
+| Priorité | Définition | SLA de Prise en compte | SLA de Résolution |
+| --- | --- | --- | --- |
+| **P1 - Critique** | DWH inaccessible ou Données Vendeurs corrompues (Impact Financier). | 15 min | 4h |
+| **P2 - Majeur** | Retard d'ingestion (>4h), rapport clé indisponible. | 1h | 8h |
+| **P3 - Mineur** | Demande d'évolution, bug cosmétique, ajout d'accès. | 4h | 5 jours ouvrés |
+
+### 1.3. Suivi des Indicateurs (KPIs MCO)
+
+Un tableau de bord "Ops" suit la santé du service :
+
+* **Disponibilité du DWH :** Taux d'uptime (Cible : 99.9%).
+* **Fraîcheur des données :** Retard moyen par rapport à l'heure prévue de mise à disposition (SLA : 8h00 matin).
+* **Qualité :** Nombre de lignes rejetées en quarantaine par jour.
+* **Ticket Volume :** Nombre de tickets ouverts/fermés par semaine.
+
+---
+
+## 2. Observabilité : Alerting et Journalisation
+
+L'objectif est de passer d'une maintenance réactive (on attend que ça casse) à une maintenance proactive.
+
+### 2.1. Configuration de la Journalisation (Logging)
+
+Tous les composants (Azure SQL, Data Lake, Pipelines ETL) envoient leurs télémétries vers **Azure Monitor** et **Log Analytics Workspace**.
+
+* **Logs d'Infrastructure :** CPU, RAM, IOPS de la base SQL (détection des goulots d'étranglement).
+* **Logs Applicatifs (ETL) :**
+* Début/Fin de chaque job d'ingestion.
+* Nombre de lignes lues vs écrites (Audit).
+* Messages d'erreur détaillés (Stack Trace).
+
+
+
+### 2.2. Gestion des Alertes
+
+Des règles d'alertes sont configurées pour notifier l'équipe d'astreinte (Email + Teams/Slack).
+
+* **Alerte "Pipeline Failure" :** Si un job ETL échoue ou dure plus de 2x sa durée habituelle.
+* **Alerte "Data Quality" :** Si le taux de rejet en quarantaine dépasse 5% sur un fichier.
+* **Alerte "Performance" :** Si le DTU (puissance de calcul) de la base SQL dépasse 90% pendant 15 minutes.
+
+---
+
+## 3. Stratégie de Sauvegarde (Backup) et PRA
+
+Pour garantir la résilience des données face aux erreurs humaines ou pannes techniques.
+
+### 3.1. Base de Données (Azure SQL - Gold & Silver)
+
+* **Backups Complets (Full) :** Automatisés par Azure chaque semaine.
+* **Backups Différentiels :** Toutes les 12 à 24 heures.
+* **Logs de Transaction :** Toutes les 5 à 10 minutes (permet le *Point-in-Time Restore*).
+* **Rétention :**
+* Court terme : 7 jours (Restauration immédiate).
+* Long terme (LTR) : 1 backup mensuel conservé 5 ans (Obligation légale/finance).
+
+
+
+### 3.2. Data Lake (Bronze - Fichiers sources)
+
+* **Soft Delete :** Activé (permet de récupérer un fichier supprimé par erreur pendant 7 jours).
+* **Versioning :** Activé sur le Blob Storage (permet de revenir à une version précédente d'un fichier écrasé).
+* **Réplication :** GRS (Geo-Redundant Storage). Les données sont copiées dans une région secondaire (ex: Paris -> Marseille) en cas de désastre majeur.
+
+---
+
+## 4. Procédures d'Évolution et Scalabilité
+
+Cette section documente "Comment faire grandir l'entrepôt".
+
+### 4.1. Ajout d'une nouvelle source de données
+
+*Procédure standardisée pour intégrer un nouveau vendeur ou une nouvelle API :*
+
+1. **Déclaration :** Création du Container dédié dans le Data Lake (via Terraform).
+2. **Mapping :** Définition du fichier de mapping (Source Colonne A -> Cible Colonne B) dans la configuration de l'ETL.
+3. **Tests :** Ingestion en environnement de recette et validation de la mise en quarantaine.
+4. **Déploiement :** Passage en production via pipeline CI/CD.
+
+### 4.2. Gestion des Accès (Sécurité)
+
+Utilisation exclusive des **Groupes Azure Active Directory (Entra ID)**. Jamais d'accès nominatif direct.
+
+* *Scénario :* "Arrivée d'un nouveau contrôleur de gestion".
+* *Action :* On ajoute l'utilisateur au groupe `GRP_SHOPNOW_FINANCE`. Ce groupe a automatiquement les droits `db_datareader` sur le schéma `Finance` du DWH.
+
+### 4.3. Scalabilité du Stockage
+
+* **Data Lake :** Scalabilité infinie native. Aucune action requise.
+* **Azure SQL :** Surveillance du taux d'occupation. Si > 80%, script Terraform pour augmenter la classe de service (Scale Up) ou ajout de stockage.
+
+---
+
+## 5. Gestion des Variations de Dimensions (SCD)
+
+C'est la documentation technique de ta modélisation "Vendeur" (réponse directe à ta consigne sur Kimball).
+
+### 5.1. Modélisation des Variations (Choix Kimball)
+
+Nous utilisons deux types de variations selon le besoin métier :
+
+| Type SCD | Description | Usage chez ShopNow | Exemple |
+| --- | --- | --- | --- |
+| **Type 1** | **Écrasement (Overwrite).** On ne garde pas l'historique. | Correction d'erreurs (ex: Faute de frappe dans le nom du vendeur). | "TehWorld" devient "TechWorld". |
+| **Type 2** | **Historisation (New Row).** On crée une nouvelle ligne pour chaque changement. | Changements d'état impactant le business (Finance). | Passage de commission 15% à 10%. |
+
+### 5.2. Intégration Technique (ETL)
+
+Voici la logique implémentée dans les pipelines ETL pour gérer le SCD Type 2 sur `dim_seller`.
+
+**Algorithme de l'ETL (Pseudo-code) :**
+
+1. **Comparaison :** On compare le fichier source entrant avec la table `dim_seller` actuelle (sur la clé métier `seller_id`).
+2. **Détection de changement :** Si le `seller_id` existe MAIS que le `tier` ou `commission` est différent.
+3. **Clôture (Update) :** On met à jour l'ancienne ligne :
+* `row_end_date` = Date du jour - 1 seconde.
+* `is_current` = 0 (Faux).
+
+
+4. **Insertion (Insert) :** On insère la nouvelle ligne :
+* `seller_key` = (Généré auto).
+* `row_start_date` = Date du jour.
+* `row_end_date` = NULL.
+* `is_current` = 1 (Vrai).
+
+
+
+### 5.3. Documentation et Mise à jour des Modèles
+
+Toute modification de la structure (ajout d'une colonne SCD) suit ce cycle :
+
+1. Mise à jour du **Modèle Logique de Données (MLD)** dans l'outil de modélisation (ex: PowerDesigner ou Mermaid).
+2. Mise à jour du **Dictionnaire de Données** (Data Catalog).
+3. Mise à jour du code **Terraform/SQL**.
+
+---
+
+### Schéma visuel pour la section SCD (Optionnel mais recommandé)
+
+```mermaid
+sequenceDiagram
+    participant Source as Fichier Vendeur
+    participant ETL as ETL Process
+    participant Dim as Table dim_seller (SCD2)
+    
+    Source->>ETL: Envoi données (TechWorld, Gold)
+    ETL->>Dim: Check statut actuel de TechWorld
+    
+    alt Pas de changement
+        Dim-->>ETL: TechWorld est déjà Gold
+        ETL->>ETL: Ignore
+    else Changement détecté (était Standard)
+        Dim-->>ETL: TechWorld est Standard (Actif)
+        ETL->>Dim: UPDATE: Fermer ligne Standard (is_current=0, end_date=Now)
+        ETL->>Dim: INSERT: Créer ligne Gold (is_current=1, start_date=Now)
+    end
+
+```
+
+Avec cet ajout, tu couvres **l'intégralité** des points de ta liste de consignes, notamment les aspects procéduraux (Backup, Alertes, Documentation) et la technicité des SCD.
+
+
+
+C'est une excellente stratégie. Pour un rapport technique, **une image (preuve) vaut 1000 mots**. Ça aère le document et ça prouve que tu n'as pas fait que du théorique, mais que tu as touché à l'outil.
+
+Vu qu'il te reste ~5 pages, voici les **3 démonstrations clés** à faire pour couvrir les points restants (SCD, Monitoring, Backup) avec les scripts pour générer les screenshots.
+
+---
+
+### PAGE 6-7 : La Gestion des Variations (SCD Type 2) - La Preuve par l'exemple
+
+C'est le point technique le plus valorisant (Kimball). Il faut montrer que ton code SQL gère l'histoire du vendeur.
+
+**Ce que tu dois faire :**
+
+1. Va dans le **Query Editor** Azure.
+2. Lance ce scénario de démonstration (Copie-colle le bloc ci-dessous).
+3. **Screenshotte le résultat du dernier SELECT.**
+
+```sql
+-- SCÉNARIO DE DÉMO SCD TYPE 2 --
+
+-- 1. État Initial : TechWorld arrive sur la marketplace (Janvier)
+INSERT INTO dim_seller (seller_id, name, tier, commission_rate, row_start_date, row_end_date, is_current)
+VALUES ('V_TECH_001', 'TechWorld', 'Standard', 0.15, '2024-01-01', NULL, 1);
+
+-- 2. Évolution : TechWorld devient performant et passe GOLD (Juin)
+-- A. On ferme l'ancienne ligne
+UPDATE dim_seller 
+SET row_end_date = '2024-05-31', is_current = 0 
+WHERE seller_id = 'V_TECH_001' AND is_current = 1;
+
+-- B. On ouvre la nouvelle ligne
+INSERT INTO dim_seller (seller_id, name, tier, commission_rate, row_start_date, row_end_date, is_current)
+VALUES ('V_TECH_001', 'TechWorld', 'Gold', 0.12, '2024-06-01', NULL, 1);
+
+-- 3. PREUVE : On regarde l'histoire du vendeur
+SELECT 
+    seller_key AS [Clé Technique], 
+    seller_id AS [ID Vendeur], 
+    tier AS [Statut], 
+    commission_rate AS [Com (%)],
+    row_start_date AS [Début], 
+    row_end_date AS [Fin], 
+    is_current AS [Actif ?]
+FROM dim_seller 
+WHERE seller_id = 'V_TECH_001'
+ORDER BY seller_key;
+
+```
+
+**Légende du screenshot dans ton rapport :**
+
+> *"Figure X : Mise en œuvre du SCD Type 2. On constate bien deux lignes pour le vendeur TechWorld. La première (Standard) est fermée, la seconde (Gold) est active. L'historique est préservé."*
+
+---
+
+### PAGE 8 : L'Observabilité (Logs et Alertes)
+
+Il faut montrer que l'entrepôt est sous surveillance (le fameux "MCO").
+
+**Ce que tu dois faire sur le Portail Azure :**
+
+1. Va sur ta **SQL Database**.
+2. Dans le menu de gauche, cherche la section **Monitoring** > **Alerts**.
+3. Clique sur "+ Create" (ou juste montre l'écran vide si tu ne veux pas configurer).
+4. Alternative plus visuelle : Va dans l'onglet **Metrics**.
+5. Sélectionne la métrique **"DTU percentage"** (puissance utilisée).
+6. **Screenshotte le graphique.**
+
+**Légende du screenshot :**
+
+> *"Figure Y : Tableau de bord de surveillance Azure Monitor. Configuration d'une alerte critique si l'utilisation du DTU dépasse 80%, garantissant la détection proactive des goulots d'étranglement lors des chargements ETL."*
+
+---
+
+### PAGE 9 : Sécurité et Backups (PRA)
+
+Tu dois répondre à l'exigence de "procédure de backup". Sur Azure, c'est natif, il suffit de le montrer.
+
+**Ce que tu dois faire sur le Portail Azure :**
+
+1. Va sur ta **SQL Database**.
+2. Dans le menu du haut, clique sur le bouton **"Restore"** (ne t'inquiète pas, ça ne lance rien tout de suite).
+3. Tu arrives sur une page avec une option "Point-in-time restore" et un curseur temporel.
+4. **Screenshotte cette interface avec le curseur de temps.**
+
+**Légende du screenshot :**
+
+> *"Figure Z : Interface de restauration Point-in-Time (PITR). Le système permet de restaurer l'entrepôt de données à la seconde près sur les 7 derniers jours, assurant la résilience face aux erreurs humaines (ex: suppression accidentelle)."*
+
+---
+
+### PAGE 10 : Organisation du Support (Diagramme)
+
+Pour finir sur la partie "Organisationnelle" (ITIL / Tickets), plutôt qu'un long texte, fais un diagramme simple qui résume le processus. Ça remplit bien la page.
+
+**Diagramme Mermaid à insérer :**
+
+```mermaid
+sequenceDiagram
+    participant Vendeur
+    participant Support as Support N1 (Ticketing)
+    participant Ops as Data Ops (N2)
+    participant Eng as Data Engineer (N3)
+
+    Note over Vendeur, Eng: Processus de Gestion d'Incident (ITIL)
+
+    Vendeur->>Support: Ticket: "Erreur rapport mensuel"
+    Support->>Support: Qualification (P1/P2/P3)
+    
+    alt Problème Simple (Accès)
+        Support-->>Vendeur: Résolution immédiate
+    else Problème Technique
+        Support->>Ops: Escalade N2
+        Ops->>Ops: Analyse Logs Azure Monitor
+        
+        alt Bug Code / Modèle
+            Ops->>Eng: Escalade N3 (Correctif)
+            Eng->>Eng: Fix SQL + Test
+            Eng-->>Ops: Patch déployé
+        end
+        
+        Ops-->>Support: Incident résolu
+        Support-->>Vendeur: Clôture du ticket
+    end
+
+```
+
+**Texte d'accompagnement (bref) :**
+
+> *"L'organisation du support suit une matrice de responsabilité stricte. Le niveau 1 filtre les demandes, le niveau 2 gère l'exploitation courante via les logs Azure présentés page 8, et le niveau 3 intervient sur les évolutions structurelles du modèle présenté page 6."*
+
+---
+
+### Résumé de ton plan final (10 pages)
+
+* **Page 1-2 :** Diagnostic & Architecture As-Is vs To-Be (Tes schémas couleur).
+* **Page 3-4 :** Le Data Lake Multi-Tenant (Ton schéma architecture détaillée).
+* **Page 5 :** Gouvernance & Qualité (Tableau des 3 temps / Quarantaine).
+* **Page 6-7 :** **Implémentation SCD Type 2** (Avec le Screenshot SQL).
+* **Page 8 :** **Surveillance** (Avec le Screenshot Azure Monitor).
+* **Page 9 :** **Backup & Sécurité** (Avec le Screenshot Restore).
+* **Page 10 :** **Processus Support** (Avec le Diagramme ITIL).
+
+schéma d'architecture du hub 
+
+```mermaid
+graph LR
+    subgraph "Émetteur (L'Enseigne)"
+        A[Producteur Python<br/>Docker Container]
+    end
+
+    subgraph "Azure Ingestion Hub"
+        B{Azure Event Hub}
+    end
+
+    subgraph "Traitement en Temps Réel"
+        C[Azure Stream Analytics]
+    end
+
+    subgraph "Stockage Final (DWH)"
+        D[(Azure SQL Database)]
+        E[Azure Data Lake Gen2]
+    end
+
+    A -- "Envoi JSON<br/>(via AMQP/HTTPS)" --> B
+    B -- "Flux de messages" --> C
+    C -- "Mapping & Dédoublonnage" --> D
+    C -- "Archivage Brut" --> E
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#0072C6,stroke:#fff,color:#fff
+    style C fill:#0072C6,stroke:#fff,color:#fff
+    style D fill:#00BCF2,stroke:#fff,color:#fff
+```
+
+Anonymisation Schema 
+
+```mermaid
+graph TD
+    subgraph "Phase 1 : Identification (Données PII)"
+        A[Client Inactif<br/>Nom: Jean Dupont<br/>Email: j.dupont@email.com]
+    end
+
+    subgraph "Phase 2 : Détection (Logic App)"
+        B{Dernière commande > 3 ans ?}
+    end
+
+    subgraph "Phase 3 : Maintenance & Rupture du lien"
+        C[Procédure sp_PurgeRGPD_Daily]
+        C1[UPDATE fact_order<br/>SET user_id = 'DELETED_RGPD']
+        C2[DELETE FROM dim_customer]
+    end
+
+    subgraph "Phase 4 : État Final (Pseudonymisation)"
+        D[Vente conservée<br/>ID: DELETED_RGPD]
+        E[Profil Client<br/>SUPPRIMÉ]
+    end
+
+    A --> B
+    B -- "Oui" --> C
+    C --> C1
+    C --> C2
+    C1 --> D
+    C2 --> E
+    B -- "Non" --> F[Conservation Intégrale]
+    
+    style C fill:#f96,stroke:#333,stroke-width:2px,color:#000
+    style D fill:#d1ecf1,stroke:#0c5460,color:#0c5460
+    style E fill:#f8d7da,stroke:#721c24,color:#721c24
+    
+```
+
+```mermaid
+graph LR
+    subgraph "Données de Navigation (Brutes)"
+        A[Session ID]
+        B[User ID: CUST-123]
+        C[URL: /profil?user=jean.dupont]
+    end
+
+    subgraph "Traitement RGPD"
+        D[Identification du User ID inactif]
+        E[DELETE FROM fact_clickstream]
+    end
+
+    subgraph "Résultat Conforme RGPD"
+        F[Traces de navigation<br/>EFFACÉES]
+    end
+
+    A --> D
+    B --> D
+    C --> D
+    D --> E
+    E --> F
+    
+    style E fill:#ff4d4d,stroke:#333,color:#000
+    style F fill:#f8d7da,stroke:#721c24,color:#721c24
+```

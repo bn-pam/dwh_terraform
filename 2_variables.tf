@@ -15,6 +15,7 @@ variable "eventhubs" {
 }
 variable "container_producers_image" {
   type = string
+  default = "bn-pam/shopnow-producer:v1"
 }
 
 variable "sql_admin_login" {
