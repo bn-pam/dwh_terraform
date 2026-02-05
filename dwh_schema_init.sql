@@ -34,8 +34,8 @@ CREATE TABLE dim_seller (
     name            NVARCHAR(255),
     tier            NVARCHAR(50),
     commission_rate DECIMAL(5, 2),
-    row_start_date  DATETIME,
-    row_end_date    DATETIME,
+    start_date  DATETIME,
+    end_date    DATETIME,
     is_current      BIT
 );
 
@@ -94,3 +94,23 @@ CREATE TABLE table_quarantaine (
     error_reason  NVARCHAR(255),  -- Pour savoir POURQUOI la donnée est là
     detected_at   DATETIME DEFAULT GETDATE()
 );
+
+ALTER TABLE dim_customer
+ADD CONSTRAINT UQ_CustomerID UNIQUE (customer_id);
+
+ALTER TABLE dim_product
+ADD CONSTRAINT UQ_ProductID UNIQUE (product_id);
+
+ALTER TABLE dim_seller
+ADD CONSTRAINT UQ_SellerID_Current UNIQUE (seller_id, is_current)
+WHERE is_current = 1; -- Permet d'avoir une seule version active par seller_id
+
+ALTER TABLE dim_customer
+ADD last_updated_at DATETIME DEFAULT GETDATE();
+
+-- On met la date du jour (ou une date fixe) aux clients pré-évolution qui ont un NULL afin de pouvoir gérer leur RGPD
+UPDATE dim_customer
+SET registration_date = GETDATE(),
+    last_updated_at = GETDATE()
+WHERE registration_date IS NULL
+   OR last_updated_at IS NULL;

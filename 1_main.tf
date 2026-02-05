@@ -87,6 +87,8 @@ resource "azurerm_storage_container" "tenant_shopnow_admin" {
 }
 #################################################
 
+#### BLOC PURGE RGPD
+
 # ajout de code pour la procédure de purge RGPD
 
 # ordonnanceur de la purge RGPD quotidienne via Logic App
@@ -98,11 +100,11 @@ resource "azurerm_logic_app_workflow" "maintenance_rgpd" {
 
   tags = {
     Category = "Compliance_RGPD"
-    Task     = "Quarantine_Daily"
+    Task     = "RGPD_Daily"
   }
 }
 
-# Déclencheur/trigger : 1ère seconde de chaque mois à 02h00 il déclenche la Logic App
+# Déclencheur/trigger : 1ère seconde de chaque jour à 17h00 il déclenche la Logic App
 resource "azurerm_logic_app_trigger_recurrence" "daily_trigger_rgpd" {
   logic_app_id = azurerm_logic_app_workflow.maintenance_rgpd.id
   name         = "recurrence-daily-purge"
@@ -117,8 +119,8 @@ resource "azurerm_logic_app_trigger_recurrence" "daily_trigger_rgpd" {
 
 # Action : Appel à la Procédure Stockée SQL (sp_PurgeRGPD_Mensuelle)
 #"type": "ApiConnection", indique qu'on utilise une connexion API existante, sinon erreur 400
-resource "azurerm_logic_app_action_custom" "call_sql_purge" {
-  logic_app_id = azurerm_logic_app_workflow.maintenance_quarantine.id
+resource "azurerm_logic_app_action_custom" "call_sql_purge_rgpd" {
+  logic_app_id = azurerm_logic_app_workflow.maintenance_rgpd.id
   name         = "Execute_sp_PurgeRGPD_Daily"
   body = <<BODY
 {
@@ -136,7 +138,7 @@ resource "azurerm_logic_app_action_custom" "call_sql_purge" {
 BODY
 }
 
-#################################################
+############ BLOC DE MISE EN QUARANTAINE
 
 # ajout de code pour la procédure de quarantaine
 
@@ -153,7 +155,7 @@ resource "azurerm_logic_app_workflow" "maintenance_quarantine" {
   }
 }
 
-# Déclencheur/trigger : 1ère seconde de chaque mois à 02h00 il déclenche la Logic App
+# Déclencheur/trigger : 1ère seconde de chaque jour à 16h00 il déclenche la Logic App
 resource "azurerm_logic_app_trigger_recurrence" "daily_trigger_quarantine" {
   logic_app_id = azurerm_logic_app_workflow.maintenance_quarantine.id
   name         = "recurrence-daily-quarantine"
@@ -185,4 +187,123 @@ resource "azurerm_logic_app_action_custom" "call_sql_purge_quarantine" {
     }
 }
 BODY
+}
+
+##### BLOC DE SURVEILLANCE QUARANTAINE
+
+# 1. Création de la Logic App de Surveillance Quarantaine
+resource "azurerm_logic_app_workflow" "monitoring_quarantine" {
+  name                = "la-shopnow-monitoring-quarantine"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  tags = {
+    Environment = "Production"
+    Project     = "ShopNow-Monitoring-Quarantine"
+  }
+}
+
+# 2. Déclencheur de récurrence (Tous les matins à 8h)
+resource "azurerm_logic_app_trigger_recurrence" "daily_check_quarantine_status" {
+  name         = "daily-monitoring-quarantine-trigger"
+  logic_app_id = azurerm_logic_app_workflow.monitoring_quarantine.id
+  frequency    = "Day"
+  interval     = 1
+  start_time   = "2026-02-06T08:00:00Z" # Date de début du monitoring
+}
+
+# Action : Appel à la Procédure Stockée SQL (sp_quatrantine_status)
+#"type": "ApiConnection", indique qu'on utilise une connexion API existante, sinon erreur 400
+resource "azurerm_logic_app_action_custom" "call_sql_check_quarantine" {
+  logic_app_id = azurerm_logic_app_workflow.monitoring_quarantine.id
+  name         = "call-sql-monitoring-quarantine"
+  body = <<BODY
+{
+    "type": "ApiConnection",
+    "inputs": {
+        "host": {
+            "connection": {
+                "name": "sql-connection-shopnow"
+            }
+        },
+        "method": "post",
+        "path": "/datasets/default/procedures/sp_quarantine_status"
+    }
+}
+BODY
+}
+
+##### BLOC MONITORING - VERSION STABLE NATIVE
+
+# 1. Connecteurs (On garde les mêmes)
+resource "azurerm_api_connection" "sql" {
+  name                = "sql-connection-alerting"
+  resource_group_name = azurerm_resource_group.rg.name
+  managed_api_id      = "/subscriptions/${var.subscription_id}/providers/Microsoft.Web/locations/${var.location}/managedApis/sql"
+}
+
+resource "azurerm_api_connection" "email" {
+  name                = "email-connection-alerting"
+  resource_group_name = azurerm_resource_group.rg.name
+  managed_api_id      = "/subscriptions/${var.subscription_id}/providers/Microsoft.Web/locations/${var.location}/managedApis/office365"
+}
+
+# 2. La Coque (Ressource vide de base)
+resource "azurerm_logic_app_workflow" "monitoring" {
+  name                = "la-shopnow-monitoring"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+# 3. Le Déclencheur (Trigger) - Natif Terraform
+resource "azurerm_logic_app_trigger_recurrence" "daily" {
+  name         = "daily-check"
+  logic_app_id = azurerm_logic_app_workflow.monitoring.id
+  frequency    = "Day"
+  interval     = 1
+}
+
+# 4. L'Action SQL - Natif Terraform (custom_action pour le JSON)
+resource "azurerm_logic_app_action_custom" "check_sla" {
+  name         = "Check_SLA_Status"
+  logic_app_id = azurerm_logic_app_workflow.monitoring.id
+
+  body = jsonencode({
+    "type": "ApiConnection",
+    "inputs": {
+      "body": { "query": "SELECT * FROM view_dashboard_kpi_sla WHERE Statut IN ('ALERTE', 'CRITICAL')" },
+      "host": { "connection": { "name": azurerm_api_connection.sql.name } },
+      "method": "post",
+      "path": "/datasets/default/query/sql"
+    }
+  })
+}
+
+# 5. L'Action Email - Uniquement si erreur (Conditionnelle)
+resource "azurerm_logic_app_action_custom" "send_alert" {
+  name         = "Send_Email_If_Error"
+  logic_app_id = azurerm_logic_app_workflow.monitoring.id
+
+  body = jsonencode({
+    "type": "If",
+    "runAfter": {
+      "Check_SLA_Status": ["Succeeded"] # C'est CA qui manquait à Azure
+    },
+    "expression": { "greater": [ "@length(body('Check_SLA_Status')?['value'])", 0 ] },
+    "actions": {
+      "Alerte_Email": {
+        "type": "ApiConnection",
+        "inputs": {
+          "body": {
+            "To": "admin@shopnow.com",
+            "Subject": "ALERTE SLA : DWH ShopNow",
+            "Body": "Anomalie détectée !"
+          },
+          "host": { "connection": { "name": azurerm_api_connection.email.name } },
+          "method": "post",
+          "path": "/Mail"
+        }
+      }
+    }
+  })
 }

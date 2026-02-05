@@ -18,32 +18,34 @@ BEGIN
         SELECT c.customer_id
         FROM dim_customer c
         LEFT JOIN fact_order o ON c.customer_id = o.customer_id
-        GROUP BY c.customer_id
-        HAVING MAX(o.order_timestamp) < DATEADD(month, -36, GETDATE())
-           OR MAX(o.order_timestamp) IS NULL;
+        GROUP BY c.customer_id, c.last_updated_at
+        HAVING
+            -- CONDITION 1 : La dernière commande date de plus de 3 ans
+            (MAX(o.order_timestamp) < DATEADD(month, -36, GETDATE()))
+            OR
+            -- CONDITION 2 : Jamais commandé ET profil non modifié/créé depuis 3 ans
+            (MAX(o.order_timestamp) IS NULL AND c.last_updated_at < DATEADD(month, -36, GETDATE()));
 
-        -- 2. Anonymisation des ventes (Clients > 36 mois)
+        -- 2. Anonymisation des ventes
         UPDATE fact_order
         SET customer_id = 'DELETED_RGPD'
         WHERE customer_id IN (SELECT customer_id FROM #ClientsAPurger);
         SET @nb_orders_anonymized = @@ROWCOUNT;
 
-        -- 3. PURGE DE LA NAVIGATION (Règle des 13 mois)
-        -- On supprime TOUT ce qui est plus vieux que 13 mois, même pour les clients actifs
-        -- ET on supprime aussi la navigation des clients que l'on vient de purger
+        -- 3. Purge de la navigation
         DELETE FROM fact_clickstream
         WHERE event_timestamp < DATEADD(month, -13, GETDATE())
            OR user_id IN (SELECT customer_id FROM #ClientsAPurger);
         SET @nb_clicks_deleted = @@ROWCOUNT;
 
-        -- 4. Suppression du profil client (Clients > 36 mois)
+        -- 4. Suppression du profil client
         DELETE FROM dim_customer
         WHERE customer_id IN (SELECT customer_id FROM #ClientsAPurger);
         SET @nb_profiles_deleted = @@ROWCOUNT;
 
         COMMIT TRANSACTION;
 
-        -- 5. Log de l'exécution
+        -- 5. Log de l'exécution (Critère C16)
         INSERT INTO sys_log_execution (proc_name, execution_date, rows_affected, status, message)
         VALUES (
             'sp_PurgeRGPD_Daily',

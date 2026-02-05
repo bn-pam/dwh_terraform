@@ -11,6 +11,17 @@ fake = Faker()
 
 # On lit la connexion depuis une variable d'environnement
 CONNECTION_STR = os.getenv("EVENTHUB_CONNECTION_STR")
+# On récupère la variable
+conn_str = os.getenv("EVENTHUB_CONNECTION_STR")
+
+# Si c'est vide ou None, on attend et on réessaie au lieu de crash
+while conn_str is None or conn_str == "":
+    print("Variable non trouvée, nouvelle tentative dans 5s...")
+    time.sleep(5)
+    conn_str = os.getenv("EVENTHUB_CONNECTION_STR")
+
+print("Connexion réussie !")
+
 ORDERS_INTERVAL      = int(os.getenv("ORDERS_INTERVAL", 60))
 PRODUCTS_INTERVAL    = int(os.getenv("PRODUCTS_INTERVAL", 120))
 CLICKSTREAM_INTERVAL = int(os.getenv("CLICKSTREAM_INTERVAL", 2))
