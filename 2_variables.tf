@@ -34,3 +34,8 @@ variable "dockerhub_username" {
 variable "dockerhub_token" {
   type = string
 }
+
+variable "sellers_marketplace" {
+  type    = set(string)
+  default = ["Techworld", "librairie-centrale", "electro-depot"]
+}

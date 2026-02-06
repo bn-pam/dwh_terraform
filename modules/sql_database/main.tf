@@ -13,8 +13,19 @@ resource "azurerm_mssql_database" "dwh" {
   collation      = "SQL_Latin1_General_CP1_CI_AS"
   license_type   = "LicenseIncluded"
   max_size_gb    = 2
-  sku_name       = "S0"
+  sku_name       = "Basic" # à ajuster selon les besoins (Basic, S0, S1, S2, etc.)
   zone_redundant = false
+
+  short_term_retention_policy {
+    retention_days = "7"
+  }
+
+  #long_term_retention_policy {
+  #  weekly_retention  = "P4W"
+  #  monthly_retention = "P12M"
+  #  yearly_retention  = "P5Y"
+  #  week_of_year      = 52
+  #}
 }
 
 resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
@@ -80,7 +91,7 @@ resource "azurerm_container_group" "db_setup" {
       "-c",
       <<-EOT
         # Écrit le contenu du fichier SQL dans le conteneur
-        echo '${file(var.schema_file_path)}' > /tmp/schema.sql
+        echo '${file("${path.root}/schema_vues_procedures/dwh_schema_init.sql")}' > /tmp/schema.sql
         
         # Exécute le script SQL sur la base de données Azure SQL
         /opt/mssql-tools/bin/sqlcmd \
@@ -93,4 +104,3 @@ resource "azurerm_container_group" "db_setup" {
     ]
   }
 }
-

@@ -64,21 +64,18 @@ resource "azurerm_storage_account" "datalake" {
 }
 
 #################################################
-# ajout de code pour les tenants
-// Création du Tenant Vendeur 1 (TechWorld)
-resource "azurerm_storage_container" "tenant_techworld" {
-  name                  = "raw-data-techworld" # Le dossier racine du vendeur
-  storage_account_name  = azurerm_storage_account.datalake.name
-  container_access_type = "private" # Sécurité : Seul ShopNow (et TechWorld via SAS key) peut lire
+# ARCHITECTURE MULTI-TENANT INDUSTRIALISÉE
+
+# Appel dynamique du module pour chaque vendeur
+module "tenant_seller" {
+  source   = "./modules/tenant_seller"
+  for_each = var.sellers_marketplace
+
+  seller_name          = each.key
+  storage_account_name = azurerm_storage_account.datalake.name
 }
 
-// Création du Tenant Vendeur 2 (Pour l'exemple)
-resource "azurerm_storage_container" "tenant_librairie" {
-  name                  = "raw-data-librairie"
-  storage_account_name  = azurerm_storage_account.datalake.name
-  container_access_type = "private"
-}
-
+#################################################
 // Création du Tenant ShopNow
 resource "azurerm_storage_container" "tenant_shopnow_admin" {
   name                  = "shopnow-core-data"
@@ -283,6 +280,8 @@ resource "azurerm_logic_app_action_custom" "check_sla" {
 resource "azurerm_logic_app_action_custom" "send_alert" {
   name         = "Send_Email_If_Error"
   logic_app_id = azurerm_logic_app_workflow.monitoring.id
+
+  depends_on = [azurerm_logic_app_action_custom.check_sla]
 
   body = jsonencode({
     "type": "If",

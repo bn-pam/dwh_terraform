@@ -18,6 +18,7 @@ resource "azurerm_stream_analytics_job" "asa_job" {
         o.order_id,
         i.ArrayValue.product_id,
         o.customer.id AS customer_id,
+        o.seller.seller_id AS seller_id,
         i.ArrayValue.quantity,
         i.ArrayValue.unit_price,
         o.status,
@@ -71,16 +72,18 @@ resource "azurerm_stream_analytics_job" "asa_job" {
 
     /* 5. NOUVELLE SECTION : Orders (Seller info) -> dim_seller */
     SELECT
-        o.seller.seller_id,
-        o.seller.name,
-        o.seller.tier
+      o.seller.seller_id,
+      o.seller.name,
+      o.seller.tier,
+      0.10 AS commission_rate, -- Valeur par défaut si besoin
+      System.Timestamp AS start_date, -- Utilise l'heure du flux
+      1 AS is_current
     INTO
-        [OutputDimSeller] -- <--- Assure-toi de créer cet Output dans ton TF
+        [OutputDimSeller]
     FROM
         [InputOrders] o
     WHERE
         o.seller.seller_id IS NOT NULL
-
 QUERY
 }
 
