@@ -1,4 +1,4 @@
-# modules/tenant_vendeur/main.tf
+# modules/tenant_seller/main.tf
 
 variable "seller_name" {}
 variable "storage_account_name" {}

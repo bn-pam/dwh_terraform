@@ -1065,3 +1065,40 @@ graph LR
     style E fill:#ff4d4d,stroke:#333,color:#000
     style F fill:#f8d7da,stroke:#721c24,color:#721c24
 ```
+```mermaid
+graph TD
+    %% Couche de Stockage
+    subgraph Storage ["COUCHE DE STOCKAGE (Unique & Centralisée)"]
+        Fact["fact_order <br/>(Toutes les ventes)"]
+        Dim["dim_seller <br/>(SCD Type 2 : Historique)"]
+        Fact -.->|Jointure seller_key| Dim
+    end
+
+    %% Couche de Sécurité
+    subgraph Security ["COUCHE DE SÉCURITÉ (Logique)"]
+        RLS{"Politique RLS <br/>(Row-Level Security)"}
+        Proc["sp_GenerateAllSellerViews <br/>(Automatisation)"]
+    end
+
+    %% Couche d'Exploitation
+    subgraph Presentation ["COUCHE D'EXPLOITATION (Vues Dédiées)"]
+        V1["v_sales_Electro_Depot"]
+        V2["v_sales_TechWorld"]
+        V3["v_sales_Librairie_Centrale"]
+    end
+
+    %% Flux des données
+    Fact --> RLS
+    RLS --> Presentation
+    Proc -->|Génère & Sécurise| Presentation
+
+    %% Utilisateurs
+    User1((Vendeur 1)) -.->|Accès restreint| V1
+    User2((Vendeur 2)) -.->|Accès restreint| V2
+    User3((Vendeur 3)) -.->|Accès restreint| V3
+
+    %% Styles
+    style Storage fill:#007fff,stroke:#333,stroke-width:2px
+    style Security fill:#ggg,stroke:#333,stroke-width:2px
+    style Presentation fill:#d4d11e,stroke:#333,stroke-width:2px,color:#000
+```
