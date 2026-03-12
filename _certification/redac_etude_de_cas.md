@@ -139,7 +139,7 @@ erDiagram
 
     %% Table: fact_order
     fact_order {
-        VARCHAR(50) order_id
+        VARCHAR(50) order_id PK
         VARCHAR(50) product_id FK
         VARCHAR(50) customer_id FK
         VARCHAR(50) seller_id FK
@@ -164,10 +164,11 @@ erDiagram
         INT seller_key PK
         VARCHAR(50) seller_id
         NVARCHAR(255) name
-        NVARCHAR(255) status
-        NVARCHAR(100) seller_category
-        DATETIME date_start
-        DATETIME date_end
+        NVARCHAR(255) tier
+        NVARCHAR(100) commission_rate
+        DATETIME start_date
+        DATETIME end_date
+        BOOLEAN is_current
     }
     
     %% La table de mise en quarantaine des données non conformes
@@ -183,9 +184,10 @@ erDiagram
     sys_log_execution {
         INT log_id PK
         NVARCHAR(100) proc_name
+        DATETIME execution_date
         INT rows_affected
         NVARCHAR(20) status
-        DATETIME execution_date
+        NVARCHAR(100) message
     }
 ```
 
