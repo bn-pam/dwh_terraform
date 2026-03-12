@@ -1,6 +1,10 @@
+resource "random_id" "suffix" {
+  byte_length = 4
+
+}
 
 resource "azurerm_container_group" "producers" {
-  name                = var.containers_group_name
+  name                = "${var.containers_group_name}-${random_id.suffix.hex}"
   location            = var.location
   resource_group_name = var.resource_group_name
 
@@ -14,14 +18,12 @@ resource "azurerm_container_group" "producers" {
     cpu    = var.cpu
     memory = var.memory
 
-
     environment_variables = {
-      EVENTHUB_CONNECTION_STR = var.connection_string
-      ORDERS_INTERVAL         = 60
-      PRODUCTS_INTERVAL       = 120
-      CLICKSTREAM_INTERVAL    = 2
+      "EVENTHUB_CONNECTION_STR" = "${var.connection_string}" # Force le format String
+      "ORDERS_INTERVAL"         = "60"
+      "PRODUCTS_INTERVAL"       = "120"
+      "CLICKSTREAM_INTERVAL"    = "2"
     }
-
   }
 
   image_registry_credential {

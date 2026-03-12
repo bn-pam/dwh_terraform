@@ -15,6 +15,7 @@ variable "eventhubs" {
 }
 variable "container_producers_image" {
   type = string
+  default = "bn-pam/shopnow-producer:v1"
 }
 
 variable "sql_admin_login" {
@@ -32,4 +33,9 @@ variable "dockerhub_username" {
 
 variable "dockerhub_token" {
   type = string
+}
+
+variable "sellers_marketplace" {
+  type    = set(string)
+  default = ["Techworld", "librairie-centrale", "electro-depot"]
 }

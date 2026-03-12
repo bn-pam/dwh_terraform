@@ -1,0 +1,4 @@
+EXEC sp_clean_data_quarantine;
+EXEC sp_PurgeRGPD_daily;
+EXEC sp_quarantine_status;
+EXEC sp_GenerateAllSellerViews;

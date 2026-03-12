@@ -11,17 +11,6 @@ fake = Faker()
 
 # On lit la connexion depuis une variable d'environnement
 CONNECTION_STR = os.getenv("EVENTHUB_CONNECTION_STR")
-# On récupère la variable
-conn_str = os.getenv("EVENTHUB_CONNECTION_STR")
-
-# Si c'est vide ou None, on attend et on réessaie au lieu de crash
-while conn_str is None or conn_str == "":
-    print("Variable non trouvée, nouvelle tentative dans 5s...")
-    time.sleep(5)
-    conn_str = os.getenv("EVENTHUB_CONNECTION_STR")
-
-print("Connexion réussie !")
-
 ORDERS_INTERVAL      = int(os.getenv("ORDERS_INTERVAL", 60))
 PRODUCTS_INTERVAL    = int(os.getenv("PRODUCTS_INTERVAL", 120))
 CLICKSTREAM_INTERVAL = int(os.getenv("CLICKSTREAM_INTERVAL", 2))
@@ -41,12 +30,6 @@ producers = {
 
 timers = {name: 0 for name in EVENT_HUBS}
 
-############ Création d'un pool de vendeurs (Sellers), après modification du script TF et du schéma de BDD pour intégrer le vendeur
-SELLERS_POOL = [
-        {"seller_id": "SELL-001", "name": "TechWorld", "tier": "Gold"},
-        {"seller_id": "SELL-002", "name": "Librairie Centrale", "tier": "Bronze"},
-        {"seller_id": "SELL-003", "name": "Electro-Depot", "tier": "Silver"}
-    ]
 # Global pool of customers
 CUSTOMERS_POOL = []
 for _ in range(100):
@@ -78,8 +61,6 @@ def build_event(name, now):
         num_items = random.randint(1, 5)
         # Select unique products to avoid duplicates in the same order
         selected_products = random.sample(PRODUCTS_POOL, num_items)
-        #########Sélectionner un vendeur aléatoire pour chaque commande (après modification de script TF et du schéma de BDD pour intégrer le vendeur)
-        selected_seller = random.choice(SELLERS_POOL)
         
         for product in selected_products:
             qty = random.randint(1, 3)
@@ -100,8 +81,7 @@ def build_event(name, now):
             "total_amount": round(total_amount, 2),
             "currency": "USD",
             "status": "PLACED",
-            "timestamp": now,
-            "seller": selected_seller,  ######### <--- vendeur après modification du script TF et du schéma de BDD
+            "timestamp": now
         }
 
     if name == "clickstream":

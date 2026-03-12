@@ -18,7 +18,6 @@ resource "azurerm_stream_analytics_job" "asa_job" {
         o.order_id,
         i.ArrayValue.product_id,
         o.customer.id AS customer_id,
-        o.seller.seller_id AS seller_id,
         i.ArrayValue.quantity,
         i.ArrayValue.unit_price,
         o.status,
@@ -69,21 +68,6 @@ resource "azurerm_stream_analytics_job" "asa_job" {
         [OutputFactClickstream]
     FROM
         [InputClickstream]
-
-    /* 5. NOUVELLE SECTION : Orders (Seller info) -> dim_seller */
-    SELECT
-      o.seller.seller_id,
-      o.seller.name,
-      o.seller.tier,
-      0.10 AS commission_rate, -- Valeur par défaut si besoin
-      System.Timestamp AS start_date, -- Utilise l'heure du flux
-      1 AS is_current
-    INTO
-        [OutputDimSeller]
-    FROM
-        [InputOrders] o
-    WHERE
-        o.seller.seller_id IS NOT NULL
 QUERY
 }
 
@@ -157,19 +141,6 @@ resource "azurerm_stream_analytics_output_mssql" "output_dim_product" {
   table                     = "dim_product"
 }
 
-# --- OUTPUT POUR LA TABLE SELLER (C17) ---
-
-resource "azurerm_stream_analytics_output_mssql" "output_dim_seller" {
-  name                      = "OutputDimSeller" # Ce nom doit être identique à celui dans ta QUERY
-  stream_analytics_job_name = azurerm_stream_analytics_job.asa_job.name
-  resource_group_name       = var.resource_group_name
-  server                    = var.sql_server_fqdn
-  user                      = var.sql_admin_login
-  password                  = var.sql_admin_password
-  database                  = var.sql_database_name
-  table                     = "dim_seller" # La table SQL de destination
-}
-
 resource "azurerm_stream_analytics_output_mssql" "output_fact_clickstream" {
   name                      = "OutputFactClickstream"
   stream_analytics_job_name = azurerm_stream_analytics_job.asa_job.name
@@ -196,8 +167,7 @@ resource "null_resource" "start_job" {
     azurerm_stream_analytics_output_mssql.output_fact_order,
     azurerm_stream_analytics_output_mssql.output_dim_customer,
     azurerm_stream_analytics_output_mssql.output_dim_product,
-    azurerm_stream_analytics_output_mssql.output_fact_clickstream,
-    azurerm_stream_analytics_output_mssql.output_dim_seller # <--- Ajout de la dépendance pour le nouvel output dim_seller
+    azurerm_stream_analytics_output_mssql.output_fact_clickstream
   ]
 
   provisioner "local-exec" {
